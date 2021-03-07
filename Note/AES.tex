@@ -1,0 +1,39 @@
+\documentclass[28pt]{article}
+\usepackage[margin=1in]{geometry}
+\usepackage{amsmath}
+\usepackage{amssymb}
+\usepackage{fancyhdr}
+\usepackage{pgfplots}
+\usepackage{graphicx}
+\usepackage{graphics}
+
+\pgfplotsset{compat=1.16}
+
+
+\author{Zhijie Xia}
+\title{AES}
+\date{2021 WINTER}
+
+\pagestyle{fancy}
+\renewcommand{\headrulewidth}{0pt}
+\renewcommand{\footrulewidth}{0pt}
+
+
+\fancyhf{}
+\rhead{
+    Zhijie Xia\\
+    AES
+}
+\rfoot{
+    Page \thepage
+}
+
+\begin{document}
+    Block mode
+    
+    \includegraphics[width=180mm,height=80mm]{CBC.png}
+    
+    Padding:
+
+    \includegraphics[width=150mm,height=80mm]{ISO_IEC9797_1Padding.png}
+\end{document}
