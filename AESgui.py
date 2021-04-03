@@ -10,24 +10,31 @@ from Crypto import Random
 from Crypto.Cipher  import AES
 from base64 import b64encode, b64decode
 
-class AEShandler():
-    def __init__(self, key, file_name, direction):
-        self.key = hashlib.sha256(key.encode()).digest()
+
+class AEShandler:
+    def __init__(self, user_file, user_key, direction):
+        # get the path to input file
+        self.user_file = user_file
+
+        self.user_key = hashlib.sha256(user_key.encode()).digest()
         self.block_size = AES.block_size
-        self.file_name = file_name
         self.direction = direction
-        self.decision()
+    
         # get the file extension
-        self.file_extension = self.file_name.split(".")[-1]
+        self.file_extension = self.user_file.split(".")[-1]
+
         # encrypted file name
-        self.encrypted_output_file = ".".join(self.file_name.split(".")[:-1]) \
-            + "." + self.file_extension + ".encry"
+        self.encrypt_output_file = ".".join(self.user_file.split(".")[:-1]) \
+            + "." + self.file_extension + ".ciph"
 
         # decrypted file name
-        self.decrypt_output_file = self.file_name[:-5].split(".")
-        self.decrypted_output_file = ".".join(self.decrypt_output_file[:-1]) \
-            + "__decrypted__." + self.decrypt_output_file[-1]
+        self.decrypt_output_file = self.user_file[:-5].split(".")
+        self.decrypt_output_file = ".".join(self.decrypt_output_file[:-1]) \
+            + "_decrypted_." + self.decrypt_output_file[-1]
+
+        self.decision()
         
+
     def padding(self, plaintext):
         toPad = self.block_size - len(plaintext) % self.block_size
         if toPad > 0:
@@ -36,14 +43,7 @@ class AEShandler():
             for i in range(toPad):
                 padded_text = padded_text+b"\x00"
             return padded_text
-
-    def encrypt(self, plaintext):
-        padded_text = self.padding(plaintext)
-        initialVector = Random.new().read(AES.block_size)
-        aes = AES.new(self.key, AES.MODE_CBC, initialVector)
-        ciphertext = aes.encrypt(padded_text)
-        return b64encode(initialVector+ciphertext)
-
+            
     def unpadding(self, padded_text):
         i = 1
         while int(padded_text[-i]) == 0:
@@ -51,59 +51,83 @@ class AEShandler():
         unpadded_text = padded_text[:-i:]
         return unpadded_text
 
-    def decrypt(self, ciphertext):
-        ciphertext = b64decode(ciphertext)
-        initialVector = ciphertext[:self.block_size]
-        aes = AES.new(self.key, AES.MODE_CBC, initialVector)
-        padded_text = aes.decrypt(ciphertext[self.block_size:])
-        unpadded_text = self.unpadding(padded_text)
-        return unpadded_text
-
-    def encrypt_file(self):
-        with open(self.file_name, 'rb') as file:
+    def encrypt(self):
+        self.abort()
+        
+        with open(self.user_file, 'rb') as file:
+            #print("encrypt(): opening & reading input file")
             plaintext = file.read()
-
-        ciphertext = self.encrypt(plaintext)
-
-        with open(self.encrypted_output_file, 'ab') as file:
-            file.write(ciphertext)
-
-    def decrypt_file(self):
-        with open(self.file_name, 'rb') as file:
-            ciphertext = file.read()
         
-        plaintext = self.decrypt(ciphertext)
+        #print("encrypt(): DONE opening & reading input file")
         
-        with open(self.decrypted_output_file,'xb') as file:
-            file.write(plaintext)
-          
+        padded_text = self.padding(plaintext)
+        initialVector = Random.new().read(AES.block_size)
+        aes = AES.new(self.user_key, AES.MODE_CBC, initialVector)
+        ciphertext = aes.encrypt(padded_text)
+        encrypted_text = b64encode(initialVector+ciphertext)
+        
+        #print("encrypt(): DONE encrypting text")
+
+        with open(self.encrypt_output_file, 'ab') as file:
+            #print("encrypt(): opening & reading encrypted output file")
+            file.write(encrypted_text)
+        
+        #print("encrypt(): DONE opening & reading encrypted output file")
+        
+        del aes
+        #print("encrypt(): Deleted aes instance")
+
+    def decrypt(self):
+        self.abort() # if the output file already exists, remove it first
+        
+        with open(self.user_file, 'rb') as file:
+            plaintext = file.read()
+        
+        plaintext = b64decode(plaintext)
+        initialVector = plaintext[:self.block_size]
+        aes = AES.new(self.user_key, AES.MODE_CBC, initialVector)
+        padded_text = aes.decrypt(plaintext[self.block_size:])
+        unpadded_text = self.unpadding(padded_text)
+
+        with open(self.decrypt_output_file,'xb') as file:
+            file.write(unpadded_text)      
+            
+        del aes
+
     def decision(self):
         if self.direction==1:
-            self.encrypt_file()
+            self.encrypt()
         else:
-            self.decrypt_file()
-        
+            self.decrypt()
+            
+    def abort(self):
+        if os.path.isfile(self.encrypt_output_file):
+            os.remove(self.encrypt_output_file)
+        if os.path.isfile(self.decrypt_output_file):
+            os.remove(self.decrypt_output_file)
+
 class MainWindow:
-    # configure root directory path relative to this file
+
+    # configure root directory path relative to file
     THIS_FOLDER_G = ""
     if getattr(sys, "frozen", False):
-        # freeze
+        # frozen
         THIS_FOLDER_G = os.path.dirname(sys.executable)
     else:
-        # unfreeze
+        # unfrozen
         THIS_FOLDER_G = os.path.dirname(os.path.realpath(__file__))
 
     def __init__(self, root):
         self.root = root
-        self.__cipher = None
-        self.__file__path = tk.StringVar()
-        self.__secret__key = tk.StringVar()
-        self.__status__percentage = tk.StringVar()
-        self.__status__percentage.set("******")
+        self._AES_cipher = None
+        self._file_path = tk.StringVar()
+        self._secret_user_key = tk.StringVar()
+        self._percent_status = tk.StringVar()
+        self._percent_status.set("----")
 
-        self._canceled = False
+        self.cancel_function = False
 
-        root.title("AESApp")
+        root.title("AES Cipher Application")
         root.configure(bg="#eeeeee")
 
         try:
@@ -120,29 +144,29 @@ class MainWindow:
         except Exception:
             pass
 
-        self.menu_border = tk.Menu(
+        self.menu_bar = tk.Menu(
             root,
             bg="#eeeeee",
             relief=tk.FLAT
         )
-        self.menu_border.add_command(
+        self.menu_bar.add_command(
             label="Quit!",
             command=root.quit
         )
 
         root.configure(
-            menu=self.menu_border
+            menu=self.menu_bar
         )
 
-        self.file_label = tk.Label(
+        self.file_path_entry_label = tk.Label(
             root,
-            text="Enter File Path Or Click SELECT FILE Button",
+            text="Enter File Path OR Click SELECT FILE Button",
             bg="#eeeeee",
             anchor=tk.W
         )
-        self.file_label.grid(
-            padx=12,
-            pady=(8, 0),
+        self.file_path_entry_label.grid(
+            padx=14,
+            pady=(10, 0),
             ipadx=0,
             ipady=1,
             row=0,
@@ -151,14 +175,14 @@ class MainWindow:
             sticky=tk.W+tk.E+tk.N+tk.S
         )
 
-        self.file_entry = tk.Entry(
+        self.file_path_entry = tk.Entry(
             root,
-            textvariable=self.__file__path,
+            textvariable=self._file_path,
             bg="#fff",
             exportselection=0,
             relief=tk.FLAT
         )
-        self.file_entry.grid(
+        self.file_path_entry.grid(
             padx=15,
             pady=6,
             ipadx=8,
@@ -172,7 +196,7 @@ class MainWindow:
         self.select_button = tk.Button(
             root,
             text="SELECT FILE",
-            command=self.file_select_cb,
+            command=self.select_file_path_cb,
             width=42,
             bg="#1089ff",
             fg="#303030",
@@ -190,15 +214,15 @@ class MainWindow:
             sticky=tk.W+tk.E+tk.N+tk.S
         )
 
-        self.key_entry_label = tk.Label(
+        self.secret_user_key_entry_label = tk.Label(
             root,
-            text="Enter Secret Key (ONLY FOR DECRYPTION)",
+            text="Enter Secret Key",
             bg="#eeeeee",
             anchor=tk.W
         )
-        self.key_entry_label.grid(
-            padx=12,
-            pady=(8, 0),
+        self.secret_user_key_entry_label.grid(
+            padx=14,
+            pady=(10, 0),
             ipadx=0,
             ipady=1,
             row=3,
@@ -207,14 +231,14 @@ class MainWindow:
             sticky=tk.W+tk.E+tk.N+tk.S
         )
 
-        self.key_entry = tk.Entry(
+        self.secret_user_key_entry = tk.Entry(
             root,
-            textvariable=self.__secret__key,
+            textvariable=self._secret_user_key,
             bg="#fff",
             exportselection=0,
             relief=tk.FLAT
         )
-        self.key_entry.grid(
+        self.secret_user_key_entry.grid(
             padx=15,
             pady=6,
             ipadx=8,
@@ -228,7 +252,7 @@ class MainWindow:
         self.encrypt_button = tk.Button(
             root,
             text="ENCRYPT",
-            command=self.file_encrypt_cb,
+            command=self.encrypt_file_cb,
             bg="#ce0000",
             fg="#303030",
             bd=2,
@@ -248,7 +272,7 @@ class MainWindow:
         self.decrypt_button = tk.Button(
             root,
             text="DECRYPT",
-            command=self.file_decrypt_cb,
+            command=self.decrypt_file_cb,
             bg="#00af00",
             fg="#303030",
             bd=2,
@@ -268,8 +292,8 @@ class MainWindow:
         self.reset_button = tk.Button(
             root,
             text="RESET",
-            command=self.reset_callback,
-            bg="#aaaaaa",
+            command=self.reset_cb,
+            bg="#00af00",
             fg="#303030",
             bd=2,
             relief=tk.FLAT
@@ -285,16 +309,16 @@ class MainWindow:
             sticky=tk.W+tk.E+tk.N+tk.S
         )
 
-        self.status_percentage_label = tk.Label(
+        self.percent_status_label = tk.Label(
             root,
-            textvariable=self.__status__percentage,
+            textvariable=self._percent_status,
             bg="#eeeeee",
             anchor=tk.W,
             justify=tk.LEFT,
             relief=tk.FLAT,
             wraplength=350
         )
-        self.status_percentage_label.grid(
+        self.percent_status_label.grid(
             padx=12,
             pady=(0, 12),
             ipadx=0,
@@ -310,97 +334,96 @@ class MainWindow:
         tk.Grid.columnconfigure(root, 2, weight=1)
         tk.Grid.columnconfigure(root, 3, weight=1)
 
-    def file_select_cb(self):
+    def select_file_path_cb(self):
         try:
             name = filedialog.askopenfile()
-            self.__file__path.set(name.name)
-            print(name.name)
+            self._file_path.set(name.name)
+            # print(name.name)
         except Exception as e:
-            self.__status__percentage.set(e)
-            self.status_percentage_label.update()
+            self._percent_status.set(e)
+            self.percent_status_label.update()
     
-    def freeze_controls(self):
-        self.file_entry.configure(state="disabled")
-        self.key_entry.configure(state="disabled")
+    def disable_function(self):
+        self.file_path_entry.configure(state="disabled")
+        self.secret_user_key_entry.configure(state="disabled")
         self.select_button.configure(state="disabled")
         self.encrypt_button.configure(state="disabled")
         self.decrypt_button.configure(state="disabled")
-        self.reset_button.configure(text="CANCEL", command=self.cancel_callback,
+        self.reset_button.configure(text="CANCEL", command=self.cancel_function_cb,
             fg="#ed3833", bg="#fafafa")
-        self.status_percentage_label.update()
+        self.percent_status_label.update()
     
-    def unfreeze_controls(self):
-        self.file_entry.configure(state="normal")
-        self.key_entry.configure(state="normal")
+    def reenable_function(self):
+        self.file_path_entry.configure(state="normal")
+        self.secret_user_key_entry.configure(state="normal")
         self.select_button.configure(state="normal")
         self.encrypt_button.configure(state="normal")
         self.decrypt_button.configure(state="normal")
-        self.reset_button.configure(text="RESET", command=self.reset_callback,
+        self.reset_button.configure(text="RESET", command=self.reset_cb,
             fg="#ffffff", bg="#aaaaaa")
-        self.status_percentage_label.update()
+        self.percent_status_label.update()
 
-    def file_encrypt_cb(self):
-        self.freeze_controls()
+    def encrypt_file_cb(self):
+        self.disable_function()
 
         try:
-            self.__cipher = AEShandler(
-                self.__secret__key.get(),
-                self.__file__path.get(),
+            self._AES_cipher = AEShandler(
+                self._file_path.get(),
+                self._secret_user_key.get(),
                 1
             )
-            for percentage in self.__cipher.encrypt_file():
-                if self._canceled:
+            for percentage in self._AES_cipher.encrypt():
+                if self.cancel_function:
                     break
                 percentage = "{0:.2f}%".format(percentage)
-                self.__status__percentage.set(percentage)
-                self.status_percentage_label.update()
-            self.__status__percentage.set("File Encrypted!")
-            if self._canceled:
-                self.__cipher.abort()
-                self.__status__percentage.set("Cancelled!")
-            self.__cipher = None
-            self._canceled = False
+                self._percent_status.set(percentage)
+                self.percent_status_label.update()
+            self._percent_status.set("File Encrypted!")
+            if self.cancel_function:
+                self._AES_cipher.abort()
+                self._percent_status.set("Cancelled!")
+            self._AES_cipher = None
+            self.cancel_function = False
         except Exception as e:
-            # print(e)
-            self.__status__percentage.set(e)
+            self._percent_status.set(e)
 
-        self.unfreeze_controls()
+        self.reenable_function()
 
-    def file_decrypt_cb(self):
-        self.freeze_controls()
+    def decrypt_file_cb(self):
+        self.disable_function()
 
         try:
-            self.__cipher = AEShandler(
-                self.__secret__key.get(),
-                self.__file__path.get(),
+            self._AES_cipher = AEShandler(
+                self._file_path.get(),
+                self._secret_user_key.get(),
                 0
             )
-            for percentage in self.__cipher.decrypt_file():
-                if self._canceled:
+            for percentage in self._AES_cipher.decrypt():
+                if self.cancel_function:
                     break
                 percentage = "{0:.2f}%".format(percentage)
-                self.__status__percentage.set(percentage)
-                self.status_percentage_label.update()
-            self.__status__percentage.set("File Decrypted!")
-            if self._canceled:
-                self.__cipher.abort()
-                self.__status__percentage.set("Cancelled!")
-            self.__cipher = None
-            self._canceled = False
+                self._percent_status.set(percentage)
+                self.percent_status_label.update()
+            self._percent_status.set("File Decrypted!")
+            if self.cancel_function:
+                self._AES_cipher.abort()
+                self._percent_status.set("Cancelled!")
+            self._AES_cipher = None
+            self.cancel_function = False
         except Exception as e:
             # print(e)
-            self.__status__percentage.set(e)
+            self._percent_status.set(e)
         
-        self.unfreeze_controls()
+        self.reenable_function()
 
-    def reset_callback(self):
-        self.__cipher = None
-        self.__file__path.set("")
-        self.__secret__key.set("")
-        self.__status__percentage.set("******")
+    def reset_cb(self):
+        self._AES_cipher = None
+        self._file_path.set("")
+        self._secret_user_key.set("")
+        self._percent_status.set("----")
     
-    def cancel_callback(self):
-        self._canceled = True
+    def cancel_function_cb(self):
+        self.cancel_function = True
 
 if __name__ == "__main__":
     ROOT = tk.Tk()
