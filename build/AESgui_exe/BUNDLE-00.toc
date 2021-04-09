@@ -1,0 +1,3 @@
+([('AESgui_exe',
+   '/Users/user/Documents/W21/329/FileEncryption/dist/AESgui_exe',
+   'EXECUTABLE')],)
